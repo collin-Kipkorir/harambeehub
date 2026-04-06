@@ -48,31 +48,48 @@ export default async function handler(req, res) {
   const callbackUrl = callbackBase ? (process.env.PAYHERO_CALLBACK_URL ? process.env.PAYHERO_CALLBACK_URL : `${callbackBase.replace(/\/$/, '')}/api/payhero/callback`) : undefined;
 
   if (!PAYHERO_API_KEY) {
-    console.warn('PAYHERO_API_KEY not set');
+    console.error('PAYHERO_API_KEY (or PAYHERO_AUTH_TOKEN) not set in environment');
+    return res.status(500).json({ success: false, message: 'PayHero auth token not configured' });
+  }
+
+  if (!PAYHERO_CHANNEL_ID) {
+    console.error('PAYHERO_CHANNEL_ID not set in environment');
+    return res.status(500).json({ success: false, message: 'PayHero channel id not configured' });
   }
 
   // initialize firebase (not strictly needed for /pay but keeps parity)
   try { initFirebase(); } catch (e) { console.warn('firebase init failed in pay handler', e.message || e); }
 
   const payload = {
-    amount,
+    amount: Number(amount),
     phone_number: normalizePhone(phone),
-    channel_id: PAYHERO_CHANNEL_ID ? Number(PAYHERO_CHANNEL_ID) : undefined,
+    channel_id: Number(PAYHERO_CHANNEL_ID),
     provider: PAYHERO_PROVIDER,
     external_reference,
-    customer_name: customer_name || `donor-${external_reference.split('|')[0]}`,
+    customer_name: customer_name || `donor-${String(external_reference).split('|')[0]}`,
     callback_url: callbackUrl,
   };
 
   try {
+    // PayHero expects a Basic auth token in the Authorization header. Allow callers to
+    // provide the token either as the raw token or already prefixed with 'Basic '.
+    const authHeader = String(PAYHERO_API_KEY).startsWith('Basic ') ? String(PAYHERO_API_KEY) : `Basic ${PAYHERO_API_KEY}`;
+
     const response = await axios.post(`${PAYHERO_API_URL}/payments`, payload, {
-      headers: { Authorization: `Bearer ${PAYHERO_API_KEY}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
       timeout: 10000,
     });
+
+    // PayHero returns 201 Created on success per documentation
+    if (response.status === 201) {
+      return res.status(201).json({ success: true, status: response.data.status || 'QUEUED', data: response.data });
+    }
 
     return res.status(200).json({ success: true, data: response.data });
   } catch (err) {
     console.error('PayHero /payments error', err?.response?.data || err.message || err);
-    return res.status(500).json({ success: false, message: err?.response?.data || err.message || 'PayHero request failed' });
+    const errBody = err?.response?.data || err.message || 'PayHero request failed';
+    // Return the upstream error body when available to aid debugging
+    return res.status(502).json({ success: false, message: errBody });
   }
 }
