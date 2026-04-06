@@ -37,13 +37,15 @@ module.exports = async function (req, res) {
     return res.status(400).json({ success: false, message: 'Missing amount, phone or external_reference' });
   }
 
-  const PAYHERO_API_URL = process.env.PAYHERO_API_URL || 'https://backend.payhero.co.ke/api/v2';
-  const PAYHERO_API_KEY = process.env.PAYHERO_API_KEY;
+  // Support both PAYHERO_API_URL or PAYHERO_BASE_URL (from your Vercel vars)
+  const PAYHERO_API_URL = process.env.PAYHERO_API_URL || (process.env.PAYHERO_BASE_URL ? `${process.env.PAYHERO_BASE_URL.replace(/\/$/, '')}/api/v2` : 'https://backend.payhero.co.ke/api/v2');
+  // Accept either PAYHERO_API_KEY or PAYHERO_AUTH_TOKEN (your project has PAYHERO_AUTH_TOKEN)
+  const PAYHERO_API_KEY = process.env.PAYHERO_API_KEY || process.env.PAYHERO_AUTH_TOKEN;
   const PAYHERO_CHANNEL_ID = process.env.PAYHERO_CHANNEL_ID;
   const PAYHERO_PROVIDER = process.env.PAYHERO_PROVIDER || 'm-pesa';
-
-  const callbackBase = process.env.CALLBACK_BASE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
-  const callbackUrl = callbackBase ? `${callbackBase.replace(/\/$/, '')}/api/payhero/callback` : undefined;
+  // Allow explicit callback override via PAYHERO_CALLBACK_URL or fallback to CALLBACK_BASE_URL or Vercel URL
+  const callbackBase = process.env.PAYHERO_CALLBACK_URL || process.env.CALLBACK_BASE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+  const callbackUrl = callbackBase ? (process.env.PAYHERO_CALLBACK_URL ? process.env.PAYHERO_CALLBACK_URL : `${callbackBase.replace(/\/$/, '')}/api/payhero/callback`) : undefined;
 
   if (!PAYHERO_API_KEY) {
     console.warn('PAYHERO_API_KEY not set');

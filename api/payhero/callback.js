@@ -44,9 +44,18 @@ module.exports = async function (req, res) {
     initFirebase();
     const db = admin.database();
 
+    // Idempotency guard: if donation already completed, skip processing
+    const donationRef = db.ref(`donations/${donationId}`);
+    const donationSnap = await donationRef.once('value');
+    const donation = donationSnap.val();
+    if (donation && donation.status === 'completed') {
+      console.log('Callback received for already completed donation:', donationId);
+      return res.json({ success: true, message: 'Already processed' });
+    }
+
     const success = (String(resultCode) === '0') || /success/i.test(String(status));
     if (!success) {
-      await db.ref(`donations/${donationId}`).update({ status: 'failed', transactionId, callbackBody: body });
+      await donationRef.update({ status: 'failed', transactionId, callbackBody: body });
       return res.json({ success: true, message: 'Donation marked failed' });
     }
 
