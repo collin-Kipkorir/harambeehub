@@ -1,5 +1,5 @@
-const axios = require('axios');
-const admin = require('firebase-admin');
+import axios from 'axios';
+import admin from 'firebase-admin';
 
 // Initialize Firebase Admin once
 function initFirebase() {
@@ -29,7 +29,7 @@ function normalizePhone(phone) {
   return p;
 }
 
-module.exports = async function (req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ success: false, message: 'Method not allowed' });
 
   const { amount, phone, external_reference, customer_name } = req.body || {};
@@ -75,4 +75,4 @@ module.exports = async function (req, res) {
     console.error('PayHero /payments error', err?.response?.data || err.message || err);
     return res.status(500).json({ success: false, message: err?.response?.data || err.message || 'PayHero request failed' });
   }
-};
+}

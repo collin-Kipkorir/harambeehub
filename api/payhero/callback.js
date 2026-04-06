@@ -1,4 +1,4 @@
-const admin = require('firebase-admin');
+import admin from 'firebase-admin';
 
 function initFirebase() {
   if (admin.apps && admin.apps.length) return admin;
@@ -15,7 +15,7 @@ function initFirebase() {
   return admin;
 }
 
-module.exports = async function (req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ success: false, message: 'Method not allowed' });
 
   const body = req.body || {};
@@ -60,7 +60,7 @@ module.exports = async function (req, res) {
     }
 
     // mark donation completed
-    await db.ref(`donations/${donationId}`).update({ status: 'completed', transactionId, completedAt: Date.now(), callbackBody: body });
+    await donationRef.update({ status: 'completed', transactionId, completedAt: Date.now(), callbackBody: body });
 
     // update campaign totals
     const campaignRef = db.ref(`campaigns/${campaignId}`);
@@ -84,4 +84,4 @@ module.exports = async function (req, res) {
     console.error('Error processing PayHero callback', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
-};
+}
