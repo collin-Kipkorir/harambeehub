@@ -1,4 +1,5 @@
-const PAYHERO_API_URL = 'http://localhost:5000/api';
+// In development the standalone server may run at localhost:5000; in production use relative /api (Vercel functions)
+const PAYHERO_API_URL = import.meta.env.DEV ? 'http://localhost:5000/api' : '/api';
 
 export const initiatePayment = async (payload: {
   amount: number;
