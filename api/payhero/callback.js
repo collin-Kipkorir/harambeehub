@@ -44,10 +44,6 @@ export default async function handler(req, res) {
     const resp = body.response || body;
 
     const external_reference = resp.ExternalReference || resp.external_reference || resp.Reference || resp.reference || (resp.metadata && resp.metadata.external_reference);
-    const transactionId = resp.MpesaReceiptNumber || resp.MpesaReceipt || resp.transaction_id || resp.transaction || resp.id;
-    const resultCode = resp.ResultCode || resp.resultCode || resp.Result || null;
-    const status = resp.Status || resp.ResultDesc || resp.Status || '';
-    const amount = resp.Amount || resp.amount || (resp.data && resp.data.amount) || 0;
 
     if (!external_reference) {
       console.warn('Callback missing external_reference', body);
@@ -63,47 +59,20 @@ export default async function handler(req, res) {
     }
 
     try {
+      // initialize firebase and push a small queue item for reliable processing
       initFirebase();
       const db = admin.database();
-
-      // Idempotency guard: if donation already completed, skip processing
-      const donationRef = db.ref(`donations/${donationId}`);
-      const donationSnap = await donationRef.once('value');
-      const donation = donationSnap.val();
-      if (donation && donation.status === 'completed') {
-        console.log('Callback received for already completed donation:', donationId);
-        return;
-      }
-
-      const success = (String(resultCode) === '0') || /success/i.test(String(status));
-      if (!success) {
-        await donationRef.update({ status: 'failed', transactionId, callbackBody: body });
-        return;
-      }
-
-      // mark donation completed
-      await donationRef.update({ status: 'completed', transactionId, completedAt: Date.now(), callbackBody: body });
-
-      // update campaign totals
-      const campaignRef = db.ref(`campaigns/${campaignId}`);
-      const campaignSnap = await campaignRef.once('value');
-      const campaign = campaignSnap.val() || {};
-      const currentRaised = Number(campaign.raised || campaign.raisedAmount || 0);
-      const raisedToAdd = Number(amount || 0);
-      await campaignRef.update({
-        raised: currentRaised + raisedToAdd,
-        donors: (Number(campaign.donors || 0) + 1),
+      const queueRef = db.ref('webhook-queue').push();
+      await queueRef.set({
+        donationId,
+        campaignId,
+        receivedAt: Date.now(),
+        processed: false,
+        callbackBody: body,
       });
-
-      // update wallet
-      const walletRef = db.ref(`wallets/${campaignId}/balance`);
-      const walletSnap = await walletRef.once('value');
-      const walletBalance = Number(walletSnap.val() || 0);
-      await walletRef.set(walletBalance + raisedToAdd);
-
-      return;
+      console.log('Enqueued webhook', queueRef.key, donationId, campaignId);
     } catch (err) {
-      console.error('Error processing PayHero callback', err);
+      console.error('Failed to enqueue webhook', err);
       return;
     }
   })();
