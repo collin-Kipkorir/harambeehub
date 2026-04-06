@@ -37,8 +37,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, message: 'Missing amount, phone or external_reference' });
   }
 
-  // Support both PAYHERO_API_URL or PAYHERO_BASE_URL (from your Vercel vars)
+  // Build the exact PayHero payments endpoint. Prefer an explicit PAYHERO_PAYMENTS_URL,
+  // fall back to PAYHERO_API_URL or PAYHERO_BASE_URL, otherwise use the official default.
   const PAYHERO_API_URL = process.env.PAYHERO_API_URL || (process.env.PAYHERO_BASE_URL ? `${process.env.PAYHERO_BASE_URL.replace(/\/$/, '')}/api/v2` : 'https://backend.payhero.co.ke/api/v2');
+  const PAYHERO_PAYMENTS_URL = process.env.PAYHERO_PAYMENTS_URL || (process.env.PAYHERO_API_URL ? `${process.env.PAYHERO_API_URL.replace(/\/$/, '')}/payments` : (process.env.PAYHERO_BASE_URL ? `${process.env.PAYHERO_BASE_URL.replace(/\/$/, '')}/api/v2/payments` : 'https://backend.payhero.co.ke/api/v2/payments'));
   // Accept either PAYHERO_API_KEY or PAYHERO_AUTH_TOKEN (your project has PAYHERO_AUTH_TOKEN)
   const PAYHERO_API_KEY = process.env.PAYHERO_API_KEY || process.env.PAYHERO_AUTH_TOKEN;
   const PAYHERO_CHANNEL_ID = process.env.PAYHERO_CHANNEL_ID;
@@ -75,7 +77,9 @@ export default async function handler(req, res) {
     // provide the token either as the raw token or already prefixed with 'Basic '.
     const authHeader = String(PAYHERO_API_KEY).startsWith('Basic ') ? String(PAYHERO_API_KEY) : `Basic ${PAYHERO_API_KEY}`;
 
-    const response = await axios.post(`${PAYHERO_API_URL}/payments`, payload, {
+    // Post directly to the payments endpoint.
+    // (This will be: https://backend.payhero.co.ke/api/v2/payments by default)
+    const response = await axios.post(PAYHERO_PAYMENTS_URL, payload, {
       headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
       timeout: 10000,
     });
