@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">HarambeeHub logo</title>
+  <!-- Simple, friendly Kenyan-themed mark: rounded shield with flag colors and H monogram -->
+  <defs>
+    <linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#006600"/>
+      <stop offset="0.5" stop-color="#000"/>
+      <stop offset="1" stop-color="#D52B1E"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="64" fill="#fff"/>
+  <!-- Flag stripes -->
+  <rect x="56" y="136" width="400" height="64" fill="#006600" rx="8"/>
+  <rect x="56" y="200" width="400" height="64" fill="#000" rx="8"/>
+  <rect x="56" y="264" width="400" height="64" fill="#D52B1E" rx="8"/>
+  <!-- Center shield shape -->
+  <g transform="translate(256,256) scale(0.9)">
+    <path d="M0 -120 C40 -120 80 -92 80 -40 C80 16 0 88 0 120 C0 88 -80 16 -80 -40 C-80 -92 -40 -120 0 -120 Z" fill="#fff" stroke="#000" stroke-width="6"/>
+    <ellipse rx="22" ry="36" fill="#D52B1E"/>
+    <ellipse rx="8" ry="14" fill="#fff" transform="translate(0,0)"/>
+  </g>
+  <!-- H text -->
+  <text x="50%" y="460" font-family="Inter, Roboto, Arial, sans-serif" font-size="48" font-weight="700" text-anchor="middle" fill="#111">HarambeeHub</text>
+</svg>

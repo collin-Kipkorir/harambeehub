@@ -1,0 +1,16 @@
+{
+  "name": "HarambeeHub",
+  "short_name": "HarambeeHub",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#007A3D",
+  "description": "HarambeeHub helps Kenyans discover and support community campaigns across Kenya.",
+  "icons": [
+    {
+      "src": "/harambee_logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512"
+    }
+  ]
+}
