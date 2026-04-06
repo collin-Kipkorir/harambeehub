@@ -49,3 +49,10 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/(.*)", "destination": "/" }
+  ]
+}
