@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>HarambeeHub</title>
+  </head>
+  <body>
+    <script>
+      // If the host serves this 404 page for an unknown route (e.g. on GitHub Pages),
+      // dynamically load the SPA index.html and let the client router handle the path.
+      (function(){
+        try {
+          fetch('/index.html')
+            .then(function(response){ return response.text(); })
+            .then(function(html){
+              document.open();
+              document.write(html);
+              document.close();
+              // Ensure the original path remains in the address bar for the SPA router
+              history.replaceState({}, '', location.pathname + location.search + location.hash);
+            })
+            .catch(function(){
+              // If fetch fails, fallback to root
+              window.location.replace('/');
+            });
+        } catch (e) {
+          window.location.replace('/');
+        }
+      })();
+    </script>
+  </body>
+</html>
