@@ -7,8 +7,10 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 5000;
-const PAYHERO_API_URL = process.env.PAYHERO_API_URL; // e.g. https://api.payhero.example
+const PAYHERO_API_URL = process.env.PAYHERO_API_URL || 'https://backend.payhero.co.ke/api/v2';
 const PAYHERO_API_KEY = process.env.PAYHERO_API_KEY;
+const PAYHERO_CHANNEL_ID = process.env.PAYHERO_CHANNEL_ID || process.env.CHANNEL_ID;
+const PAYHERO_PROVIDER = process.env.PAYHERO_PROVIDER || 'm-pesa';
 const CALLBACK_BASE_URL = process.env.CALLBACK_BASE_URL; // e.g. https://mydomain.com
 
 if (!PAYHERO_API_URL || !PAYHERO_API_KEY) {
@@ -54,15 +56,19 @@ app.post('/api/payhero/pay', async (req, res) => {
   }
 
   try {
-    // Build PayHero request payload — adjust to your PayHero API contract
+    // Build PayHero request payload matching PayHero docs
     const payload = {
       amount,
-      phone,
+      phone_number: phone, // PayHero expects international format e.g. 2547xxxxxxxx
+      channel_id: Number(PAYHERO_CHANNEL_ID) || undefined,
+      provider: PAYHERO_PROVIDER,
       external_reference,
+      customer_name: req.body.customer_name || `donor-${external_reference.split('|')[0]}`,
       callback_url: `${CALLBACK_BASE_URL}/api/payhero/callback`,
     };
 
-    const response = await axios.post(`${PAYHERO_API_URL}/stk/push`, payload, {
+    // Post to PayHero payments endpoint
+    const response = await axios.post(`${PAYHERO_API_URL}/payments`, payload, {
       headers: {
         Authorization: `Bearer ${PAYHERO_API_KEY}`,
         'Content-Type': 'application/json',
@@ -83,13 +89,13 @@ app.post('/api/payhero/pay', async (req, res) => {
 app.post('/api/payhero/callback', async (req, res) => {
   const body = req.body || {};
 
-  // Example expected fields (adjust to PayHero callback shape):
-  // { external_reference: "donationId|campaignId", transaction_id: "...", status: "SUCCESS" , amount: 100 }
-
-  const external_reference = body.external_reference || body.reference || body.metadata?.external_reference;
-  const transactionId = body.transaction_id || body.transaction || body.id || body.txn_id;
-  const status = (body.status || body.transaction_status || '').toLowerCase();
-  const amount = body.amount || body.value || (body.data && body.data.amount);
+  // PayHero callback shape per docs:
+  // { response: { Amount, ExternalReference, MpesaReceiptNumber, Phone, ResultCode, ResultDesc, Status }, status: true }
+  const resp = body.response || body;
+  const external_reference = resp.ExternalReference || resp.external_reference || resp.reference || resp.metadata?.external_reference;
+  const transactionId = resp.MpesaReceiptNumber || resp.MpesaReceipt || resp.transaction_id || resp.transaction || resp.id;
+  const status = (resp.Status || resp.ResultDesc || resp.Result || '').toString();
+  const amount = resp.Amount || resp.amount || (resp.data && resp.data.amount);
 
   if (!external_reference) {
     console.warn('Callback received without external_reference:', body);
@@ -107,12 +113,14 @@ app.post('/api/payhero/callback', async (req, res) => {
   }
 
   try {
-    // Determine final outcome
-    const success = status === 'success' || status === 'completed' || status === 'ok';
+    // Determine final outcome from PayHero callback
+    // PayHero returns ResultCode === 0 and Status === 'Success' for successful transactions
+    const resultCode = resp.ResultCode || resp.resultCode || resp.Result || null;
+    const success = (String(resultCode) === '0') || /success/i.test(String(status));
 
     if (!success) {
       // Mark donation as failed
-      await db.ref(`donations/${donationId}`).update({ status: 'failed', transactionId });
+      await db.ref(`donations/${donationId}`).update({ status: 'failed', transactionId, callbackBody: body });
       return res.json({ success: true, message: 'Donation marked as failed' });
     }
 
@@ -128,7 +136,7 @@ app.post('/api/payhero/callback', async (req, res) => {
     // }
 
     // Update donation: set completed and attach transaction id
-    await db.ref(`donations/${donationId}`).update({ status: 'completed', transactionId, completedAt: Date.now() });
+  await db.ref(`donations/${donationId}`).update({ status: 'completed', transactionId, completedAt: Date.now(), callbackBody: body });
 
     // Update campaign totals (safe add)
     const campaignRef = db.ref(`campaigns/${campaignId}`);
