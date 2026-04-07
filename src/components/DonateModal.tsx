@@ -9,7 +9,7 @@ import { motion } from 'framer-motion';
 import { Smartphone } from 'lucide-react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const suggestedAmounts = [50, 100, 500, 1000, 5000];
 
@@ -29,6 +29,7 @@ export default function DonateModal() {
   } = useDonateStore();
 
   const unsubRef = useRef<(() => void) | null>(null);
+  const [donationIdLocal, setDonationIdLocal] = useState<string | null>(null);
 
   // Clean up Firebase listener on unmount or modal close
   useEffect(() => {
@@ -51,6 +52,9 @@ export default function DonateModal() {
       });
 
       if (!donationId) throw new Error('Failed to create donation');
+
+      // keep a local copy so status UI can request a direct status check if needed
+      setDonationIdLocal(donationId);
 
       // 2. Listen for donation status changes in Firebase (callback will update this)
       const donationRef = ref(db, `donations/${donationId}/status`);
@@ -82,6 +86,7 @@ export default function DonateModal() {
 
   const handleClose = () => {
     unsubRef.current?.();
+    setDonationIdLocal(null);
     closeModal();
   };
 
@@ -105,11 +110,16 @@ export default function DonateModal() {
           {status !== 'idle' ? (
             <PaymentStatus
               status={status}
+              donationId={donationIdLocal}
               onRetry={() => {
                 unsubRef.current?.();
+                setDonationIdLocal(null);
                 reset();
               }}
-              onClose={handleClose}
+              onClose={() => {
+                setDonationIdLocal(null);
+                handleClose();
+              }}
             />
           ) : (
             <div className="space-y-5">
