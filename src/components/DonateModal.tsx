@@ -9,7 +9,8 @@ import { motion } from 'framer-motion';
 import { Smartphone } from 'lucide-react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useStatusPolling } from '@/hooks/useStatusPolling';
 
 const suggestedAmounts = [50, 100, 500, 1000, 5000];
 
@@ -29,6 +30,15 @@ export default function DonateModal() {
   } = useDonateStore();
 
   const unsubRef = useRef<(() => void) | null>(null);
+  const [donationIdLocal, setDonationIdLocal] = useState<string | null>(null);
+
+  // start polling when we have a donationId and are pending
+  useStatusPolling(donationIdLocal, status === 'pending', {
+    initialDelayMs: 3000,
+    maxAttempts: 6,
+    backoffFactor: 1.5,
+    onSuccess: () => setStatus('success'),
+  });
 
   // Clean up Firebase listener on unmount or modal close
   useEffect(() => {
@@ -52,7 +62,8 @@ export default function DonateModal() {
 
       if (!donationId) throw new Error('Failed to create donation');
 
-  // local donation id intentionally not stored in UI; UI listens to DB for status updates
+    // keep a local copy so we can poll the status endpoint while waiting for callbacks
+    setDonationIdLocal(donationId);
 
       // 2. Listen for donation status changes in Firebase (callback will update this)
       const donationRef = ref(db, `donations/${donationId}/status`);
@@ -84,6 +95,7 @@ export default function DonateModal() {
 
   const handleClose = () => {
     unsubRef.current?.();
+    setDonationIdLocal(null);
     closeModal();
   };
 
