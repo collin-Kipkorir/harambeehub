@@ -1,47 +1,15 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, XCircle, Loader2, RefreshCw } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
-import { useDonateStore } from '@/store/useDonateStore';
 
 interface PaymentStatusProps {
   status: 'idle' | 'pending' | 'success' | 'failed';
-  donationId?: string | null;
   onRetry?: () => void;
   onClose?: () => void;
 }
 
-export default function PaymentStatus({ status, donationId, onRetry, onClose }: PaymentStatusProps) {
-  const setStatus = useDonateStore((s) => s.setStatus);
-  const [checking, setChecking] = useState(false);
-
+export default function PaymentStatus({ status, onRetry, onClose }: PaymentStatusProps) {
   if (status === 'idle') return null;
-
-  const checkStatus = async () => {
-    try {
-      setChecking(true);
-      // Ask the server to check transaction-status for the current donation if present
-      // We rely on donations being created with an external_reference of donationId|campaignId
-      // The client will construct donationId from listening state (the modal stores the id locally)
-      // A simple approach: call /api/payhero/status?donationId=<id> — the donate modal supplies the id via a data attribute on the page
-      // However, we don't have donationId prop here; instead we ask the server to return latest known status for the current session.
-      // To keep this minimal and safe, call the status endpoint without donationId — it will return an error if missing.
-  const url = donationId ? `/api/payhero/status?donationId=${encodeURIComponent(donationId)}` : '/api/payhero/status';
-  const resp = await fetch(url);
-      if (!resp.ok) {
-        console.warn('Status check failed', resp.status);
-        return;
-      }
-      const json = await resp.json();
-      // If server reports donationStatus, update local UI
-      if (json?.donationStatus === 'completed') setStatus('success');
-      if (json?.donationStatus === 'failed') setStatus('failed');
-    } catch (err) {
-      console.warn('Failed to check status', err);
-    } finally {
-      setChecking(false);
-    }
-  };
 
   return (
     <AnimatePresence>
@@ -60,15 +28,7 @@ export default function PaymentStatus({ status, donationId, onRetry, onClose }: 
                 Enter your M-Pesa PIN to complete the payment
               </p>
             </div>
-            <div className="flex gap-2 justify-center mt-3">
-              <Button onClick={checkStatus} size="sm" disabled={checking} variant="outline">
-                {checking ? (
-                  <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/> Checking</span>
-                ) : (
-                  <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4"/> Check status</span>
-                )}
-              </Button>
-            </div>
+            {/* removed manual check button - status will reflect updates from DB/callbacks */}
           </>
         )}
 
