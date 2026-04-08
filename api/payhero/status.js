@@ -76,9 +76,78 @@ export default async function handler(req, res) {
     const authHeader = String(PAYHERO_API_KEY).startsWith('Basic ') ? String(PAYHERO_API_KEY) : `Basic ${PAYHERO_API_KEY}`;
     const response = await axios.get(PAYHERO_TX_STATUS_URL, { headers: { Authorization: authHeader }, timeout: 10000 });
 
-    return res.status(200).json({ success: true, donationStatus: donationSnapshot?.status || 'pending', transactionStatus: response.data });
+    // If PayHero reports a successful transaction, perform an idempotent DB update so
+    // clients see the donation as completed immediately.
+    const transaction = response.data;
+
+    // Determine if the transaction indicates success. PayHero responses vary, check a few shapes.
+    let isSuccess = false;
+    try {
+      if (transaction) {
+        if (transaction.success === true) isSuccess = true;
+        const statusVal = (transaction.status || transaction.Status || '').toString().toUpperCase();
+        if (statusVal === 'SUCCESS') isSuccess = true;
+        const resp = transaction.response || transaction.data || transaction.body || null;
+        if (resp) {
+          const respStatus = (resp.Status || resp.status || '').toString().toUpperCase();
+          const respCode = resp.ResultCode || resp.result_code || resp.resultCode;
+          if (respStatus === 'SUCCESS' || Number(respCode) === 0) isSuccess = true;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to interpret PayHero transaction response', e?.message || e);
+    }
+
+    // If success and we know the donationId and campaignId, update DB idempotently
+    try {
+      let dId = null;
+      let cId = null;
+      if (refToCheck && String(refToCheck).includes('|')) {
+        const parts = String(refToCheck).split('|');
+        dId = parts[0];
+        cId = parts[1];
+      } else if (donationSnapshot && donationSnapshot.campaignId) {
+        dId = donationId || null;
+        cId = donationSnapshot.campaignId;
+      }
+
+      if (isSuccess && dId && cId) {
+        const donationRef = db.ref(`donations/${dId}`);
+        const campaignRef = db.ref(`campaigns/${cId}`);
+
+        // Update donation if not already completed
+        await donationRef.transaction((current) => {
+          if (!current) return current; // donation must exist
+          if (current.status === 'completed') return; // already processed
+          const txId = (transaction && (transaction.response?.MpesaReceiptNumber || transaction.checkout_request_id || transaction.reference || transaction.data?.reference)) || null;
+          return { ...current, status: 'completed', transactionId: txId };
+        });
+
+        // Atomically update campaign totals while preventing double-counting by tracking processed donations
+        await campaignRef.transaction((current) => {
+          if (!current) return current || { raised: 0, donors: 0 };
+          current._processedDonations = current._processedDonations || {};
+          if (current._processedDonations[dId]) return current; // already applied
+          const amount = Number(donationSnapshot?.amount || 0) || 0;
+          current.raised = (current.raised || 0) + amount;
+          current.donors = (current.donors || 0) + 1;
+          current._processedDonations[dId] = true;
+          return current;
+        });
+      }
+    } catch (dbErr) {
+      console.error('Failed to perform idempotent DB update after status check', dbErr?.message || dbErr);
+    }
+
+    return res.status(200).json({ success: true, donationStatus: donationSnapshot?.status || (isSuccess ? 'completed' : 'pending'), transactionStatus: transaction });
   } catch (err) {
-    console.error('PayHero /transaction-status error', err?.response?.data || err.message || err);
+    // Provide structured diagnostics in logs to make it easy to debug from Vercel
+    console.error('PayHero /transaction-status error', {
+      message: err?.message,
+      status: err?.response?.status,
+      data: err?.response?.data,
+      url: PAYHERO_TX_STATUS_URL,
+    });
     const errBody = err?.response?.data || err.message || 'PayHero request failed';
     return res.status(502).json({ success: false, message: errBody });
   }
