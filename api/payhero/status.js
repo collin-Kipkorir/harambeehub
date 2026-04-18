@@ -57,11 +57,13 @@ export default async function handler(req, res) {
 
   try {
     const authHeader = String(PAYHERO_API_KEY).startsWith('Basic ') ? String(PAYHERO_API_KEY) : `Basic ${PAYHERO_API_KEY}`;
-    const response = await axios.get(PAYHERO_TX_STATUS_URL, { headers: { Authorization: authHeader }, timeout: 10000 });
+  console.log('Checking PayHero transaction-status for reference', refToCheck, 'url', PAYHERO_TX_STATUS_URL);
+  const response = await axios.get(PAYHERO_TX_STATUS_URL, { headers: { Authorization: authHeader }, timeout: 10000 });
 
-    // If PayHero reports a successful transaction, perform an idempotent DB update so
-    // clients see the donation as completed immediately.
-    const transaction = response.data;
+  // If PayHero reports a successful transaction, perform an idempotent DB update so
+  // clients see the donation as completed immediately.
+  const transaction = response.data;
+  console.log('PayHero transaction-status response for', refToCheck, transaction);
 
     // Determine if the transaction indicates success. PayHero responses vary, check a few shapes.
     let isSuccess = false;
@@ -83,8 +85,9 @@ export default async function handler(req, res) {
 
     // Resolve mapping from provider reference to donation and campaign.
     try {
-      const mapSnap = await db.ref(`payheroRefs/${String(refToCheck)}`).once('value');
+  const mapSnap = await db.ref(`payheroRefs/${String(refToCheck)}`).once('value');
       const mapping = mapSnap.val();
+  console.log('Resolved mapping for reference', refToCheck, mapping);
       if (!mapping || !mapping.donationId || !mapping.campaignId) {
         return res.status(404).json({ success: false, message: 'Reference mapping not found' });
       }
@@ -100,6 +103,7 @@ export default async function handler(req, res) {
       try {
         const snap = await db.ref(`donations/${dId}`).once('value');
         donationRecord = snap.val();
+        console.log('Loaded donation record for', dId, donationRecord);
       } catch (fetchErr) {
         console.warn('Failed to read donation record for amount', fetchErr?.message || fetchErr);
       }
