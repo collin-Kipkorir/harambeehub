@@ -75,5 +75,64 @@ export default async function handler(req, res) {
       console.error('Failed to enqueue webhook', err);
       return;
     }
+
+      // Quick path: try to process the callback immediately (idempotent). This
+      // gives faster UX while the queued worker provides reliable background processing.
+      (async () => {
+        try {
+          const db = admin.database();
+          const donationRef = db.ref(`donations/${donationId}`);
+          const campaignRef = db.ref(`campaigns/${campaignId}`);
+
+          // Determine if callback indicates a successful payment
+          const respBody = resp || {};
+          const resultCode = respBody.ResultCode || respBody.result_code || respBody.Result || null;
+          const statusText = respBody.Status || respBody.ResultDesc || respBody.StatusDesc || respBody.result || '';
+          const receipt = respBody.MpesaReceiptNumber || respBody.MpesaReceipt || respBody.Receipt || null;
+          const quickSuccess = (String(resultCode) === '0') || (/success/i.test(String(statusText))) || Boolean(receipt);
+
+          if (!quickSuccess) {
+            console.log('Callback does not indicate success, deferring to queued worker', donationId);
+            return;
+          }
+
+          // Load donation to obtain amount
+          const donationSnap = await donationRef.once('value');
+          const donation = donationSnap.val();
+
+          // Idempotently mark donation completed
+          await donationRef.transaction((current) => {
+            if (!current) return current;
+            if (current.status === 'completed') return current;
+            return { ...current, status: 'completed', transactionId: receipt || null, completedAt: Date.now() };
+          });
+
+          // Atomically update campaign totals and mark processed donations to avoid double-counting
+          await campaignRef.transaction((current) => {
+            current = current || {};
+            current._processedDonations = current._processedDonations || {};
+            if (current._processedDonations[donationId]) return current; // already applied
+            const amount = Math.max(1, Number((donation && donation.amount) || 0));
+            if (amount > 0) {
+              current.raised = (Number(current.raised || 0)) + amount;
+              current.donors = (Number(current.donors || 0)) + 1;
+            }
+            current._processedDonations[donationId] = true;
+            return current;
+          });
+
+          // Update the queued item to indicate immediate processing succeeded
+          try {
+            await db.ref(`webhook-queue/${queueRef.key}`).update({ processed: true, result: 'completed', processedAt: Date.now() });
+          } catch (uErr) {
+            console.warn('Failed to update webhook-queue item after immediate processing', uErr?.message || uErr);
+          }
+
+          console.log('Processed webhook immediately for donation', donationId);
+        } catch (procErr) {
+          console.error('Immediate processing of callback failed', procErr?.message || procErr);
+          // leave the queued item for the worker to retry
+        }
+      })();
   })();
 }
