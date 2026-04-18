@@ -90,14 +90,20 @@ exports.processWebhookQueue = functions.database.ref('/webhook-queue/{itemId}').
     // Success path: update donation and increment campaign and wallet using transactions
     await donationRef.update({ status: 'completed', transactionId: pickReferenceFromResp(resp) || resp.MpesaReceiptNumber || null, completedAt: Date.now(), callbackBody });
 
-    // Update campaign atomically
-  // Use amount from callback or donation; enforce minimum 1 Ksh for tests
-  const rawAmount = Number(resp.Amount || resp.amount || (donation && donation.amount) || 0);
-  const amount = Math.max(1, rawAmount);
+    // Update campaign atomically and mark the donation as processed to avoid double-counting.
+    // Use amount from callback or donation; enforce minimum 1 Ksh for tests
+    const rawAmount = Number(resp.Amount || resp.amount || (donation && donation.amount) || 0);
+    const amount = Math.max(1, rawAmount);
     await campaignRef.transaction(curr => {
       curr = curr || {};
-      curr.raised = (Number(curr.raised || 0)) + amount;
-      curr.donors = (Number(curr.donors || 0)) + 1;
+      curr._processedDonations = curr._processedDonations || {};
+      // If this donation was already applied, skip
+      if (curr._processedDonations[donationId]) return curr;
+      if (amount > 0) {
+        curr.raised = (Number(curr.raised || 0)) + amount;
+        curr.donors = (Number(curr.donors || 0)) + 1;
+      }
+      curr._processedDonations[donationId] = true;
       return curr;
     });
 
