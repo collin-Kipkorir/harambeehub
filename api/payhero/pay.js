@@ -85,43 +85,46 @@ export default async function handler(req, res) {
       timeout: 10000,
     });
 
-    // PayHero returns 201 Created on success per documentation
-    if (response.status === 201) {
-      // Persist a mapping from PayHero reference -> our internal donation id so later
-      // status checks that provide only the PayHero reference can resolve which donation to update.
-      const payheroData = response.data || {};
-      const possibleRefs = [
-        payheroData.reference,
-        payheroData.payment_reference,
-        payheroData.data && payheroData.data.reference,
-        payheroData.response && payheroData.response.Reference,
-        payheroData.checkout_request_id,
-        payheroData.CheckoutRequestID,
-        payheroData.external_reference,
-      ];
-      const payheroRef = possibleRefs.find(Boolean);
+    // PayHero returns a body we should inspect for provider references regardless of status.
+    const payheroData = response.data || {};
+    const possibleRefs = [
+      payheroData.reference,
+      payheroData.payment_reference,
+      payheroData.data && payheroData.data.reference,
+      payheroData.response && payheroData.response.Reference,
+      payheroData.checkout_request_id,
+      payheroData.CheckoutRequestID,
+      payheroData.external_reference,
+    ];
+    const payheroRef = possibleRefs.find(Boolean) || null;
 
-      try {
-        // Try to save mapping to Realtime DB if we have both a payheroRef and external_reference
-        const admin = initFirebase();
-        const db = admin.database();
-        const ext = external_reference || null;
-        if (payheroRef && ext) {
-          const parts = String(ext).split('|');
-          const donationId = parts[0];
-          const campaignId = parts[1] || null;
-          if (donationId) {
-            await db.ref(`payheroRefs/${String(payheroRef)}`).set({ donationId, campaignId, createdAt: Date.now() });
+    try {
+      // Try to save mapping to Realtime DB if we have both a payheroRef and external_reference
+      const admin = initFirebase();
+      const db = admin.database();
+      const ext = external_reference || null;
+      if (payheroRef && ext) {
+        const parts = String(ext).split('|');
+        const donationId = parts[0];
+        const campaignId = parts[1] || null;
+        if (donationId) {
+          await db.ref(`payheroRefs/${String(payheroRef)}`).set({ donationId, campaignId, createdAt: Date.now() });
+          // Also attach the provider reference to the donation record so status checks that
+          // start from donationId can find the provider reference rather than guessing.
+          try {
+            await db.ref(`donations/${donationId}/payheroRef`).set(String(payheroRef));
+          } catch (innerErr) {
+            console.warn('Failed to write payheroRef to donation record', innerErr?.message || innerErr);
           }
         }
-      } catch (e) {
-        console.warn('Failed to persist payhero reference mapping', e?.message || e);
       }
-
-      return res.status(201).json({ success: true, status: payheroData.status || 'QUEUED', data: payheroData });
+    } catch (e) {
+      console.warn('Failed to persist payhero reference mapping', e?.message || e);
     }
 
-    return res.status(200).json({ success: true, data: response.data });
+    // Always surface a top-level `reference` field for the client to consume
+    const responseBody = { success: true, status: payheroData.status || (response.status === 201 ? 'QUEUED' : 'OK'), reference: payheroRef, data: payheroData };
+    return res.status(response.status === 201 ? 201 : 200).json(responseBody);
   } catch (err) {
     console.error('PayHero /payments error', err?.response?.data || err.message || err);
     const errBody = err?.response?.data || err.message || 'PayHero request failed';
