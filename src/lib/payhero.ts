@@ -17,10 +17,30 @@ export const initiatePayment = async (payload: {
     }),
   });
 
+  // Parse JSON body when available
+  const json = await response.json().catch(() => null);
+
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Payment request failed' }));
-    throw new Error(error.message || 'Payment request failed');
+    const message = json?.message || json?.error || json?.error_message || 'Payment request failed';
+    throw new Error(message);
   }
 
-  return response.json() as Promise<{ success: boolean; message: string; checkout_request_id?: string }>;
+  // Normalize and return a convenient shape for callers.
+  // Try common fields that PayHero may return (varies by account / integration)
+  const possible = [
+    json?.reference,
+    json?.payment_reference,
+    json?.data?.reference,
+    json?.response?.Reference,
+    json?.checkout_request_id,
+    json?.CheckoutRequestID,
+  ];
+  const reference = possible.find(Boolean) || null;
+
+  return {
+    success: true,
+    message: json?.message || null,
+    reference,
+    raw: json,
+  } as { success: boolean; message?: string | null; reference?: string | null; raw?: any };
 };

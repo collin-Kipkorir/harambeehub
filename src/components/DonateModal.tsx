@@ -30,6 +30,7 @@ export default function DonateModal() {
   } = useDonateStore();
 
   const unsubRef = useRef<(() => void) | null>(null);
+  const payheroRefUnsubRef = useRef<(() => void) | null>(null);
   const [providerRefLocal, setProviderRefLocal] = useState<string | null>(null);
 
   // start polling when we have a provider reference and are pending
@@ -78,6 +79,20 @@ export default function DonateModal() {
         }
       });
 
+      // 2b. If we didn't get a provider reference from the /pay response,
+      // listen for `donations/<donationId>/payheroRef` which the server will
+      // write when it receives the PayHero /payments response. This ensures
+      // the client can start polling as soon as the provider reference is available.
+      const payheroRefPath = `donations/${donationId}/payheroRef`;
+      payheroRefUnsubRef.current = onValue(ref(db, payheroRefPath), (snap) => {
+        const val = snap.val();
+        if (val) {
+          setProviderRefLocal(String(val));
+          // stop listening once we have the provider reference
+          payheroRefUnsubRef.current?.();
+        }
+      });
+
       // 3. Call backend to initiate STK push
       const payResp = await initiatePayment({
         amount: Number(amount),
@@ -86,29 +101,37 @@ export default function DonateModal() {
         donationId,
       });
 
-      // Try to extract a provider reference from the PayHero response and store locally
-      const payData = payResp?.data || payResp;
-      const possible = [
-        payData?.reference,
-        payData?.payment_reference,
-        payData?.data?.reference,
-        payData?.response?.Reference,
-        payData?.checkout_request_id,
-        payData?.CheckoutRequestID,
-      ];
-      const providerRef = possible.find(Boolean) || null;
-      if (providerRef) setProviderRefLocal(String(providerRef));
+      // Prefer the normalized `reference` returned by `initiatePayment()`.
+      // Fallback to inspecting raw payload if not present.
+      const providerRef = (payResp && (payResp.reference || payResp?.raw?.reference)) || null;
+      if (!providerRef) {
+        const payData = payResp?.raw || payResp;
+        const possible = [
+          payData?.reference,
+          payData?.payment_reference,
+          payData?.data?.reference,
+          payData?.response?.Reference,
+          payData?.checkout_request_id,
+          payData?.CheckoutRequestID,
+        ];
+        const found = possible.find(Boolean) || null;
+        if (found) setProviderRefLocal(String(found));
+      } else {
+        setProviderRefLocal(String(providerRef));
+      }
 
       // Status will be updated by Firebase listener when callback is received
     } catch {
       setStatus('failed');
       unsubRef.current?.();
+      payheroRefUnsubRef.current?.();
     }
   };
 
   const handleClose = () => {
     unsubRef.current?.();
     setProviderRefLocal(null);
+    payheroRefUnsubRef.current?.();
     closeModal();
   };
 
