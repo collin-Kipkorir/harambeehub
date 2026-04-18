@@ -48,7 +48,6 @@ export default async function handler(req, res) {
         if (donationSnapshot.status && donationSnapshot.status !== 'pending') {
           return res.status(200).json({ success: true, donationStatus: donationSnapshot.status, donation: donationSnapshot });
         }
-
         // build external_reference if possible
         if (!refToCheck && donationSnapshot.campaignId) {
           refToCheck = `${donationId}|${donationSnapshot.campaignId}`;
@@ -98,17 +97,33 @@ export default async function handler(req, res) {
       console.warn('Failed to interpret PayHero transaction response', e?.message || e);
     }
 
-    // If success and we know the donationId and campaignId, update DB idempotently
+    // If success, try to resolve donationId/campaignId from the refToCheck.
     try {
       let dId = null;
       let cId = null;
+      // If the refToCheck contains our internal format (donationId|campaignId) use it
       if (refToCheck && String(refToCheck).includes('|')) {
         const parts = String(refToCheck).split('|');
         dId = parts[0];
         cId = parts[1];
-      } else if (donationSnapshot && donationSnapshot.campaignId) {
-        dId = donationId || null;
-        cId = donationSnapshot.campaignId;
+      } else {
+        // Otherwise, treat refToCheck as a PayHero provider reference and look up mapping
+        try {
+          const mapSnap = await db.ref(`payheroRefs/${String(refToCheck)}`).once('value');
+          const mapping = mapSnap.val();
+          if (mapping) {
+            dId = mapping.donationId || null;
+            cId = mapping.campaignId || null;
+          }
+        } catch (mapErr) {
+          console.warn('Failed to read payheroRefs mapping', mapErr?.message || mapErr);
+        }
+
+        // If mapping not found, fall back to donationSnapshot if available
+        if ((!dId || !cId) && donationSnapshot && donationSnapshot.campaignId) {
+          dId = donationId || dId;
+          cId = donationSnapshot.campaignId || cId;
+        }
       }
 
       if (isSuccess && dId && cId) {

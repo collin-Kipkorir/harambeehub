@@ -87,7 +87,38 @@ export default async function handler(req, res) {
 
     // PayHero returns 201 Created on success per documentation
     if (response.status === 201) {
-      return res.status(201).json({ success: true, status: response.data.status || 'QUEUED', data: response.data });
+      // Persist a mapping from PayHero reference -> our internal donation id so later
+      // status checks that provide only the PayHero reference can resolve which donation to update.
+      const payheroData = response.data || {};
+      const possibleRefs = [
+        payheroData.reference,
+        payheroData.payment_reference,
+        payheroData.data && payheroData.data.reference,
+        payheroData.response && payheroData.response.Reference,
+        payheroData.checkout_request_id,
+        payheroData.CheckoutRequestID,
+        payheroData.external_reference,
+      ];
+      const payheroRef = possibleRefs.find(Boolean);
+
+      try {
+        // Try to save mapping to Realtime DB if we have both a payheroRef and external_reference
+        const admin = initFirebase();
+        const db = admin.database();
+        const ext = external_reference || null;
+        if (payheroRef && ext) {
+          const parts = String(ext).split('|');
+          const donationId = parts[0];
+          const campaignId = parts[1] || null;
+          if (donationId) {
+            await db.ref(`payheroRefs/${String(payheroRef)}`).set({ donationId, campaignId, createdAt: Date.now() });
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to persist payhero reference mapping', e?.message || e);
+      }
+
+      return res.status(201).json({ success: true, status: payheroData.status || 'QUEUED', data: payheroData });
     }
 
     return res.status(200).json({ success: true, data: response.data });
