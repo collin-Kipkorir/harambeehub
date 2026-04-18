@@ -30,10 +30,10 @@ export default function DonateModal() {
   } = useDonateStore();
 
   const unsubRef = useRef<(() => void) | null>(null);
-  const [donationIdLocal, setDonationIdLocal] = useState<string | null>(null);
+  const [providerRefLocal, setProviderRefLocal] = useState<string | null>(null);
 
-  // start polling when we have a donationId and are pending
-  useStatusPolling(donationIdLocal, status === 'pending', {
+  // start polling when we have a provider reference and are pending
+  useStatusPolling(providerRefLocal, status === 'pending', {
     initialDelayMs: 3000,
     maxAttempts: 6,
     backoffFactor: 1.5,
@@ -62,8 +62,8 @@ export default function DonateModal() {
 
       if (!donationId) throw new Error('Failed to create donation');
 
-    // keep a local copy so we can poll the status endpoint while waiting for callbacks
-    setDonationIdLocal(donationId);
+  // keep a local copy so we can poll the status endpoint while waiting for callbacks
+  // The provider reference is returned by the /payments call; we'll set it below.
 
       // 2. Listen for donation status changes in Firebase (callback will update this)
       const donationRef = ref(db, `donations/${donationId}/status`);
@@ -79,12 +79,25 @@ export default function DonateModal() {
       });
 
       // 3. Call backend to initiate STK push
-      await initiatePayment({
+      const payResp = await initiatePayment({
         amount: Number(amount),
         phone,
         campaignId,
         donationId,
       });
+
+      // Try to extract a provider reference from the PayHero response and store locally
+      const payData = payResp?.data || payResp;
+      const possible = [
+        payData?.reference,
+        payData?.payment_reference,
+        payData?.data?.reference,
+        payData?.response?.Reference,
+        payData?.checkout_request_id,
+        payData?.CheckoutRequestID,
+      ];
+      const providerRef = possible.find(Boolean) || null;
+      if (providerRef) setProviderRefLocal(String(providerRef));
 
       // Status will be updated by Firebase listener when callback is received
     } catch {
@@ -95,7 +108,7 @@ export default function DonateModal() {
 
   const handleClose = () => {
     unsubRef.current?.();
-    setDonationIdLocal(null);
+    setProviderRefLocal(null);
     closeModal();
   };
 
