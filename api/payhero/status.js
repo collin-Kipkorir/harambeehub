@@ -48,9 +48,16 @@ export default async function handler(req, res) {
         if (donationSnapshot.status && donationSnapshot.status !== 'pending') {
           return res.status(200).json({ success: true, donationStatus: donationSnapshot.status, donation: donationSnapshot });
         }
-        // build external_reference if possible
-        if (!refToCheck && donationSnapshot.campaignId) {
-          refToCheck = `${donationId}|${donationSnapshot.campaignId}`;
+
+        // Prefer a stored PayHero provider reference on the donation (saved at /payments time)
+        // If present, use it to query PayHero. Otherwise fall back to building the
+        // external_reference (donationId|campaignId) which PayHero may not recognize.
+        if (!refToCheck) {
+          if (donationSnapshot.payheroRef) {
+            refToCheck = donationSnapshot.payheroRef;
+          } else if (donationSnapshot.campaignId) {
+            refToCheck = `${donationId}|${donationSnapshot.campaignId}`;
+          }
         }
       }
     }
@@ -130,6 +137,18 @@ export default async function handler(req, res) {
         const donationRef = db.ref(`donations/${dId}`);
         const campaignRef = db.ref(`campaigns/${cId}`);
 
+        // Ensure we have the donation record (amount etc). If we started from a provider
+        // reference we may not have loaded donationSnapshot earlier, so fetch it now.
+        let donationRecord = donationSnapshot;
+        if (!donationRecord) {
+          try {
+            const snap = await db.ref(`donations/${dId}`).once('value');
+            donationRecord = snap.val();
+          } catch (fetchErr) {
+            console.warn('Failed to read donation record for amount', fetchErr?.message || fetchErr);
+          }
+        }
+
         // Update donation if not already completed
         await donationRef.transaction((current) => {
           if (!current) return current; // donation must exist
@@ -143,9 +162,12 @@ export default async function handler(req, res) {
           if (!current) return current || { raised: 0, donors: 0 };
           current._processedDonations = current._processedDonations || {};
           if (current._processedDonations[dId]) return current; // already applied
-          const amount = Number(donationSnapshot?.amount || 0) || 0;
-          current.raised = (current.raised || 0) + amount;
-          current.donors = (current.donors || 0) + 1;
+          const amount = Number(donationRecord?.amount || 0) || 0;
+          // Only apply a positive amount
+          if (amount > 0) {
+            current.raised = (current.raised || 0) + amount;
+            current.donors = (current.donors || 0) + 1;
+          }
           current._processedDonations[dId] = true;
           return current;
         });
