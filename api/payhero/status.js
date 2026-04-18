@@ -30,44 +30,21 @@ function initFirebase() {
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ success: false, message: 'Method not allowed' });
 
-  const { donationId, reference } = req.query || {};
+  const { reference } = req.query || {};
 
   // Initialize Firebase
   try { initFirebase(); } catch (e) { console.warn('firebase init failed in status handler', e.message || e); }
 
   const db = admin.database();
 
-  let refToCheck = reference;
-  let donationSnapshot = null;
-
-  try {
-    if (donationId) {
-      const snap = await db.ref(`donations/${donationId}`).once('value');
-      donationSnapshot = snap.val();
-      if (donationSnapshot) {
-        if (donationSnapshot.status && donationSnapshot.status !== 'pending') {
-          return res.status(200).json({ success: true, donationStatus: donationSnapshot.status, donation: donationSnapshot });
-        }
-
-        // Prefer a stored PayHero provider reference on the donation (saved at /payments time)
-        // If present, use it to query PayHero. Otherwise fall back to building the
-        // external_reference (donationId|campaignId) which PayHero may not recognize.
-        if (!refToCheck) {
-          if (donationSnapshot.payheroRef) {
-            refToCheck = donationSnapshot.payheroRef;
-          } else if (donationSnapshot.campaignId) {
-            refToCheck = `${donationId}|${donationSnapshot.campaignId}`;
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Failed to read donation', err?.message || err);
+  // Only accept a PayHero provider `reference` for status checks. This avoids
+  // leaking internal donation identifiers and ensures we query PayHero with
+  // the correct provider reference (the value PayHero recognizes).
+  if (!reference) {
+    return res.status(400).json({ success: false, message: 'Missing reference parameter' });
   }
 
-  if (!refToCheck) {
-    return res.status(400).json({ success: false, message: 'Missing donationId or reference to check' });
-  }
+  const refToCheck = reference;
 
   // Build PayHero transaction-status URL
   const PAYHERO_API_URL = process.env.PAYHERO_API_URL || (process.env.PAYHERO_BASE_URL ? `${process.env.PAYHERO_BASE_URL.replace(/\/$/, '')}/api/v2` : 'https://backend.payhero.co.ke/api/v2');
@@ -104,51 +81,30 @@ export default async function handler(req, res) {
       console.warn('Failed to interpret PayHero transaction response', e?.message || e);
     }
 
-    // If success, try to resolve donationId/campaignId from the refToCheck.
+    // Resolve mapping from provider reference to donation and campaign.
     try {
-      let dId = null;
-      let cId = null;
-      // If the refToCheck contains our internal format (donationId|campaignId) use it
-      if (refToCheck && String(refToCheck).includes('|')) {
-        const parts = String(refToCheck).split('|');
-        dId = parts[0];
-        cId = parts[1];
-      } else {
-        // Otherwise, treat refToCheck as a PayHero provider reference and look up mapping
-        try {
-          const mapSnap = await db.ref(`payheroRefs/${String(refToCheck)}`).once('value');
-          const mapping = mapSnap.val();
-          if (mapping) {
-            dId = mapping.donationId || null;
-            cId = mapping.campaignId || null;
-          }
-        } catch (mapErr) {
-          console.warn('Failed to read payheroRefs mapping', mapErr?.message || mapErr);
-        }
-
-        // If mapping not found, fall back to donationSnapshot if available
-        if ((!dId || !cId) && donationSnapshot && donationSnapshot.campaignId) {
-          dId = donationId || dId;
-          cId = donationSnapshot.campaignId || cId;
-        }
+      const mapSnap = await db.ref(`payheroRefs/${String(refToCheck)}`).once('value');
+      const mapping = mapSnap.val();
+      if (!mapping || !mapping.donationId || !mapping.campaignId) {
+        return res.status(404).json({ success: false, message: 'Reference mapping not found' });
       }
 
-      if (isSuccess && dId && cId) {
-        const donationRef = db.ref(`donations/${dId}`);
-        const campaignRef = db.ref(`campaigns/${cId}`);
+      const dId = mapping.donationId;
+      const cId = mapping.campaignId;
 
-        // Ensure we have the donation record (amount etc). If we started from a provider
-        // reference we may not have loaded donationSnapshot earlier, so fetch it now.
-        let donationRecord = donationSnapshot;
-        if (!donationRecord) {
-          try {
-            const snap = await db.ref(`donations/${dId}`).once('value');
-            donationRecord = snap.val();
-          } catch (fetchErr) {
-            console.warn('Failed to read donation record for amount', fetchErr?.message || fetchErr);
-          }
-        }
+      const donationRef = db.ref(`donations/${dId}`);
+      const campaignRef = db.ref(`campaigns/${cId}`);
 
+      // Fetch donation record to obtain amount and current status
+      let donationRecord = null;
+      try {
+        const snap = await db.ref(`donations/${dId}`).once('value');
+        donationRecord = snap.val();
+      } catch (fetchErr) {
+        console.warn('Failed to read donation record for amount', fetchErr?.message || fetchErr);
+      }
+
+      if (isSuccess && donationRecord) {
         // Update donation if not already completed
         await donationRef.transaction((current) => {
           if (!current) return current; // donation must exist
