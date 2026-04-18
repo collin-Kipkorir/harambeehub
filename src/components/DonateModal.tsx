@@ -139,13 +139,16 @@ export default function DonateModal() {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-md mx-auto rounded-3xl p-0 overflow-hidden border-0 shadow-2xl">
+      <DialogContent
+        aria-describedby="donate-modal-description"
+        className="sm:max-w-md mx-auto rounded-3xl p-0 overflow-hidden border-0 shadow-2xl"
+      >
         <div className="bg-primary px-6 pt-6 pb-4">
           <DialogHeader>
             <DialogTitle className="text-primary-foreground text-lg font-bold">
               Donate to {campaignTitle}
             </DialogTitle>
-            <p className="text-primary-foreground/80 text-sm mt-1">
+            <p id="donate-modal-description" className="text-primary-foreground/80 text-sm mt-1">
               Secure M-Pesa payment via PayHero
             </p>
           </DialogHeader>
