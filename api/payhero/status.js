@@ -70,7 +70,6 @@ export default async function handler(req, res) {
     let isFailure = false;
     try {
       if (transaction) {
-        if (transaction.success === true) isSuccess = true;
         const statusVal = (transaction.status || transaction.Status || '').toString().toUpperCase();
         if (statusVal === 'SUCCESS') isSuccess = true;
         if (['FAILED', 'CANCELLED', 'CANCELED', 'ERROR', 'REJECTED'].includes(statusVal)) isFailure = true;
@@ -78,7 +77,9 @@ export default async function handler(req, res) {
         if (resp) {
           const respStatus = (resp.Status || resp.status || '').toString().toUpperCase();
           const respCode = resp.ResultCode || resp.result_code || resp.resultCode;
+          const receipt = resp.MpesaReceiptNumber || resp.MpesaReceipt || resp.Receipt || null;
           if (respStatus === 'SUCCESS' || Number(respCode) === 0) isSuccess = true;
+          if (receipt) isSuccess = true;
           if (['FAILED', 'CANCELLED', 'CANCELED', 'ERROR', 'REJECTED'].includes(respStatus)) isFailure = true;
           if (respCode !== undefined && respCode !== null && Number(respCode) !== 0) {
             const failureText = `${resp.ResultDesc || resp.status || resp.Status || ''}`.toUpperCase();

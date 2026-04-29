@@ -21,11 +21,43 @@ export default function PaymentStatus({ status, onRetry, onClose }: PaymentStatu
       >
         {status === 'pending' && (
           <>
-            <Loader2 className="w-12 h-12 text-primary mx-auto animate-spin" />
-            <div>
-              <p className="font-semibold text-foreground">Check your phone</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Enter your M-Pesa PIN to complete the payment
+            <div className="rounded-3xl border border-primary/15 bg-primary/5 px-5 py-6 space-y-5">
+              <div className="relative mx-auto flex h-20 w-20 items-center justify-center">
+                <motion.div
+                  className="absolute inset-0 rounded-full border-4 border-primary/15"
+                  animate={{ scale: [1, 1.08, 1], opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                />
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg">
+                  <Loader2 className="h-7 w-7 animate-spin" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary/80">
+                  M-Pesa STK Push Sent
+                </p>
+                <p className="text-xl font-bold text-foreground">
+                  Waiting for PIN authorization on your phone
+                </p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  We have sent the payment prompt to your M-Pesa line. Open the prompt on your phone and enter your PIN to finish the donation securely.
+                </p>
+              </div>
+
+              <div className="grid gap-2 text-left">
+                <div className="rounded-2xl bg-background/80 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Step 1</p>
+                  <p className="text-sm font-medium text-foreground">Check your phone for the M-Pesa prompt</p>
+                </div>
+                <div className="rounded-2xl bg-background/80 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Step 2</p>
+                  <p className="text-sm font-medium text-foreground">Enter your M-Pesa PIN to authorize the payment</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                This screen will update automatically after you approve or cancel the request.
               </p>
             </div>
             {/* removed manual check button - status will reflect updates from DB/callbacks */}
