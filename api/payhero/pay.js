@@ -71,9 +71,10 @@ export default async function handler(req, res) {
   // initialize firebase (not strictly needed for /pay but keeps parity)
   try { initFirebase(); } catch (e) { console.warn('firebase init failed in pay handler', e.message || e); }
 
-  // Ensure a minimum test amount of 1 Ksh is used to avoid zero/invalid payments
+  // Ensure a minimum amount (KES) to avoid small/invalid payments
+  const MIN_AMOUNT = 50;
   const payload = {
-    amount: Math.max(1, Number(amount)),
+    amount: Math.max(MIN_AMOUNT, Number(amount)),
     phone_number: normalizePhone(phone),
     channel_id: Number(PAYHERO_CHANNEL_ID),
     provider: PAYHERO_PROVIDER,

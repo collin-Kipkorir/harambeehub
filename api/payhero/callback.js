@@ -121,7 +121,8 @@ export default async function handler(req, res) {
             current = current || {};
             current._processedDonations = current._processedDonations || {};
             if (current._processedDonations[donationId]) return current; // already applied
-            const amount = Math.max(1, Number((donation && donation.amount) || 0));
+            const MIN_AMOUNT = 50;
+            const amount = Math.max(MIN_AMOUNT, Number((donation && donation.amount) || 0));
             if (amount > 0) {
               current.raised = (Number(current.raised || 0)) + amount;
               current.donors = (Number(current.donors || 0)) + 1;

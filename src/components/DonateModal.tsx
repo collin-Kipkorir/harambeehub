@@ -136,7 +136,7 @@ export default function DonateModal() {
     closeModal();
   };
 
-  const isFormValid = amount && Number(amount) >= 1 && phone.length >= 10;
+  const isFormValid = amount && Number(amount) >= 50 && phone.length >= 10;
 
   return (
     <Dialog open={isModalOpen} onOpenChange={(open) => !open && handleClose()}>
@@ -193,7 +193,7 @@ export default function DonateModal() {
 
               <div>
                 <label className="text-sm font-medium text-foreground mb-2 block">
-                  Or enter custom amount (min KES 1)
+                  Or enter custom amount (min KES 50)
                 </label>
                 <Input
                   type="number"
@@ -201,7 +201,7 @@ export default function DonateModal() {
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   className="h-12 rounded-xl text-base"
-                  min={1}
+                  min={50}
                 />
               </div>
 

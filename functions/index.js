@@ -92,8 +92,9 @@ exports.processWebhookQueue = functions.database.ref('/webhook-queue/{itemId}').
 
     // Update campaign atomically and mark the donation as processed to avoid double-counting.
     // Use amount from callback or donation; enforce minimum 1 Ksh for tests
-    const rawAmount = Number(resp.Amount || resp.amount || (donation && donation.amount) || 0);
-    const amount = Math.max(1, rawAmount);
+  const MIN_AMOUNT = 50;
+  const rawAmount = Number(resp.Amount || resp.amount || (donation && donation.amount) || 0);
+  const amount = Math.max(MIN_AMOUNT, rawAmount);
     await campaignRef.transaction(curr => {
       curr = curr || {};
       curr._processedDonations = curr._processedDonations || {};
