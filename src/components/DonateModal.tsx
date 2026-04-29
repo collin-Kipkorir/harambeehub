@@ -45,6 +45,7 @@ export default function DonateModal() {
   useEffect(() => {
     return () => {
       unsubRef.current?.();
+      payheroRefUnsubRef.current?.();
     };
   }, []);
 
@@ -160,6 +161,8 @@ export default function DonateModal() {
               status={status}
               onRetry={() => {
                 unsubRef.current?.();
+                payheroRefUnsubRef.current?.();
+                setProviderRefLocal(null);
                 reset();
               }}
               onClose={handleClose}

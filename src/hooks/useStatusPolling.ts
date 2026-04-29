@@ -8,14 +8,14 @@ type Options = {
   onFailure?: () => void;
 };
 
-export function useStatusPolling(donationId: string | null, active: boolean, options: Options = {}) {
+export function useStatusPolling(reference: string | null, active: boolean, options: Options = {}) {
   const { initialDelayMs = 3000, maxAttempts = 6, backoffFactor = 1.5, onSuccess, onFailure } = options;
   const attemptRef = useRef(0);
   const timerRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!active || !donationId) return;
+    if (!active || !reference) return;
     attemptRef.current = 0;
 
     const poll = async () => {
@@ -23,9 +23,8 @@ export function useStatusPolling(donationId: string | null, active: boolean, opt
       abortRef.current = new AbortController();
 
       try {
-        const res = await fetch(`/api/payhero/status?donationId=${encodeURIComponent(donationId)}`, {
-          signal: abortRef.current.signal,
-        });
+        const url = `/api/payhero/status?reference=${encodeURIComponent(reference)}`;
+        const res = await fetch(url, { signal: abortRef.current.signal });
         const json = await res.json().catch(() => null);
         if (res.ok && json?.donationStatus === 'completed') {
           onSuccess?.();
@@ -54,5 +53,5 @@ export function useStatusPolling(donationId: string | null, active: boolean, opt
       if (timerRef.current) clearTimeout(timerRef.current);
       if (abortRef.current) abortRef.current.abort();
     };
-  }, [donationId, active, initialDelayMs, maxAttempts, backoffFactor, onSuccess, onFailure]);
+  }, [reference, active, initialDelayMs, maxAttempts, backoffFactor, onSuccess, onFailure]);
 }

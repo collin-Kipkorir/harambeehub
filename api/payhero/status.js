@@ -44,7 +44,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, message: 'Missing reference parameter' });
   }
 
-  const refToCheck = reference;
+  const refToCheck = String(reference).trim();
 
   // Build PayHero transaction-status URL
   const PAYHERO_API_URL = process.env.PAYHERO_API_URL || (process.env.PAYHERO_BASE_URL ? `${process.env.PAYHERO_BASE_URL.replace(/\/$/, '')}/api/v2` : 'https://backend.payhero.co.ke/api/v2');
@@ -57,26 +57,33 @@ export default async function handler(req, res) {
 
   try {
     const authHeader = String(PAYHERO_API_KEY).startsWith('Basic ') ? String(PAYHERO_API_KEY) : `Basic ${PAYHERO_API_KEY}`;
-  console.log('Checking PayHero transaction-status for reference', refToCheck, 'url', PAYHERO_TX_STATUS_URL);
-  const response = await axios.get(PAYHERO_TX_STATUS_URL, { headers: { Authorization: authHeader }, timeout: 10000 });
+    console.log('Checking PayHero transaction-status for reference', refToCheck, 'url', PAYHERO_TX_STATUS_URL);
+    const response = await axios.get(PAYHERO_TX_STATUS_URL, { headers: { Authorization: authHeader }, timeout: 10000 });
 
-  // If PayHero reports a successful transaction, perform an idempotent DB update so
-  // clients see the donation as completed immediately.
-  const transaction = response.data;
-  console.log('PayHero transaction-status response for', refToCheck, transaction);
+    // If PayHero reports a successful transaction, perform an idempotent DB update so
+    // clients see the donation as completed immediately.
+    const transaction = response.data;
+    console.log('PayHero transaction-status response for', refToCheck, transaction);
 
     // Determine if the transaction indicates success. PayHero responses vary, check a few shapes.
     let isSuccess = false;
+    let isFailure = false;
     try {
       if (transaction) {
         if (transaction.success === true) isSuccess = true;
         const statusVal = (transaction.status || transaction.Status || '').toString().toUpperCase();
         if (statusVal === 'SUCCESS') isSuccess = true;
+        if (['FAILED', 'CANCELLED', 'CANCELED', 'ERROR', 'REJECTED'].includes(statusVal)) isFailure = true;
         const resp = transaction.response || transaction.data || transaction.body || null;
         if (resp) {
           const respStatus = (resp.Status || resp.status || '').toString().toUpperCase();
           const respCode = resp.ResultCode || resp.result_code || resp.resultCode;
           if (respStatus === 'SUCCESS' || Number(respCode) === 0) isSuccess = true;
+          if (['FAILED', 'CANCELLED', 'CANCELED', 'ERROR', 'REJECTED'].includes(respStatus)) isFailure = true;
+          if (respCode !== undefined && respCode !== null && Number(respCode) !== 0) {
+            const failureText = `${resp.ResultDesc || resp.status || resp.Status || ''}`.toUpperCase();
+            if (/FAIL|CANCEL|ERROR|REJECT|DECLIN/.test(failureText)) isFailure = true;
+          }
         }
       }
     } catch (e) {
@@ -85,18 +92,17 @@ export default async function handler(req, res) {
 
     // Resolve mapping from provider reference to donation and campaign.
     try {
-  const mapSnap = await db.ref(`payheroRefs/${String(refToCheck)}`).once('value');
+      const mapSnap = await db.ref(`payheroRefs/${String(refToCheck)}`).once('value');
       const mapping = mapSnap.val();
-  console.log('Resolved mapping for reference', refToCheck, mapping);
-      if (!mapping || !mapping.donationId || !mapping.campaignId) {
+      console.log('Resolved mapping for reference', refToCheck, mapping);
+      if (!mapping || !mapping.donationId) {
         return res.status(404).json({ success: false, message: 'Reference mapping not found' });
       }
 
       const dId = mapping.donationId;
-      const cId = mapping.campaignId;
+      let cId = mapping.campaignId || null;
 
       const donationRef = db.ref(`donations/${dId}`);
-      const campaignRef = db.ref(`campaigns/${cId}`);
 
       // Fetch donation record to obtain amount and current status
       let donationRecord = null;
@@ -104,39 +110,65 @@ export default async function handler(req, res) {
         const snap = await db.ref(`donations/${dId}`).once('value');
         donationRecord = snap.val();
         console.log('Loaded donation record for', dId, donationRecord);
+        if (!cId) cId = donationRecord?.campaignId || null;
       } catch (fetchErr) {
         console.warn('Failed to read donation record for amount', fetchErr?.message || fetchErr);
       }
 
-      if (isSuccess && donationRecord) {
+      if (!donationRecord) {
+        return res.status(404).json({ success: false, message: 'Donation not found for reference mapping' });
+      }
+
+      const campaignRef = cId ? db.ref(`campaigns/${cId}`) : null;
+
+      if (isSuccess) {
         // Update donation if not already completed
         await donationRef.transaction((current) => {
           if (!current) return current; // donation must exist
-          if (current.status === 'completed') return; // already processed
+          if (current.status === 'completed') return current; // already processed
           const txId = (transaction && (transaction.response?.MpesaReceiptNumber || transaction.checkout_request_id || transaction.reference || transaction.data?.reference)) || null;
-          return { ...current, status: 'completed', transactionId: txId };
+          return { ...current, status: 'completed', transactionId: txId, completedAt: current.completedAt || Date.now() };
         });
 
         // Atomically update campaign totals while preventing double-counting by tracking processed donations
-        await campaignRef.transaction((current) => {
-          if (!current) return current || { raised: 0, donors: 0 };
-          current._processedDonations = current._processedDonations || {};
-          if (current._processedDonations[dId]) return current; // already applied
-          const amount = Number(donationRecord?.amount || 0) || 0;
-          // Only apply a positive amount
-          if (amount > 0) {
-            current.raised = (current.raised || 0) + amount;
-            current.donors = (current.donors || 0) + 1;
-          }
-          current._processedDonations[dId] = true;
-          return current;
+        if (campaignRef) {
+          await campaignRef.transaction((current) => {
+            if (!current) current = { raised: 0, donors: 0 };
+            current._processedDonations = current._processedDonations || {};
+            if (current._processedDonations[dId]) return current; // already applied
+            const amount = Number(donationRecord?.amount || 0) || 0;
+            if (amount > 0) {
+              current.raised = Number(current.raised || current.raisedAmount || 0) + amount;
+              current.donors = Number(current.donors || 0) + 1;
+            }
+            current._processedDonations[dId] = true;
+            return current;
+          });
+        } else {
+          console.warn('No campaignId available for successful PayHero reference', refToCheck, dId);
+        }
+      } else if (isFailure) {
+        await donationRef.transaction((current) => {
+          if (!current) return current;
+          if (current.status === 'completed') return current;
+          return { ...current, status: 'failed', failedAt: current.failedAt || Date.now() };
         });
       }
+
+      const finalDonationSnap = await donationRef.once('value');
+      const finalDonation = finalDonationSnap.val();
+
+      return res.status(200).json({
+        success: true,
+        donationStatus: finalDonation?.status || (isSuccess ? 'completed' : isFailure ? 'failed' : 'pending'),
+        donationId: dId,
+        campaignId: cId,
+        transactionStatus: transaction,
+      });
     } catch (dbErr) {
       console.error('Failed to perform idempotent DB update after status check', dbErr?.message || dbErr);
+      return res.status(500).json({ success: false, message: 'Failed to sync donation status' });
     }
-
-    return res.status(200).json({ success: true, donationStatus: donationSnapshot?.status || (isSuccess ? 'completed' : 'pending'), transactionStatus: transaction });
   } catch (err) {
     // Provide structured diagnostics in logs to make it easy to debug from Vercel
     console.error('PayHero /transaction-status error', {

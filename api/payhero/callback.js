@@ -62,6 +62,15 @@ export default async function handler(req, res) {
       // initialize firebase and push a small queue item for reliable processing
       initFirebase();
       const db = admin.database();
+      const payheroRef = resp.Reference || resp.reference || resp.CheckoutRequestID || resp.checkout_request_id || resp.MpesaReceiptNumber || null;
+      if (payheroRef) {
+        try {
+          await db.ref(`payheroRefs/${String(payheroRef)}`).update({ donationId, campaignId, updatedAt: Date.now() });
+          await db.ref(`donations/${donationId}/payheroRef`).set(String(payheroRef));
+        } catch (mapErr) {
+          console.warn('Failed to persist callback payhero reference mapping', mapErr?.message || mapErr);
+        }
+      }
       const queueRef = db.ref('webhook-queue').push();
       await queueRef.set({
         donationId,

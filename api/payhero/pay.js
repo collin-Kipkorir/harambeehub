@@ -5,9 +5,20 @@ import admin from 'firebase-admin';
 function initFirebase() {
   if (admin.apps && admin.apps.length) return admin;
   const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  const saBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64;
   const dbUrl = process.env.FIREBASE_DATABASE_URL;
-  if (saJson) {
-    const serviceAccount = JSON.parse(saJson);
+
+  let saString = saJson || null;
+  if (!saString && saBase64) {
+    try {
+      saString = Buffer.from(saBase64, 'base64').toString('utf8');
+    } catch (err) {
+      console.warn('Failed to decode FIREBASE_SERVICE_ACCOUNT_JSON_BASE64', err);
+    }
+  }
+
+  if (saString) {
+    const serviceAccount = JSON.parse(saString);
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount), databaseURL: dbUrl });
   } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     admin.initializeApp({ databaseURL: dbUrl });
@@ -20,12 +31,10 @@ function initFirebase() {
 
 function normalizePhone(phone) {
   if (!phone) return phone;
-  let p = phone.trim();
-  // Remove leading +
+  let p = phone.trim().replace(/[^\d+]/g, '');
   if (p.startsWith('+')) p = p.slice(1);
-  // If starts with 0, convert to 254
   if (p.startsWith('0')) p = '254' + p.slice(1);
-  // If already starts with 7 or 1 etc, assume missing country code (not safe) - leave as is
+  if (/^(7|1)\d{8}$/.test(p)) p = '254' + p;
   return p;
 }
 
@@ -92,6 +101,8 @@ export default async function handler(req, res) {
       payheroData.payment_reference,
       payheroData.data && payheroData.data.reference,
       payheroData.response && payheroData.response.Reference,
+      payheroData.response && payheroData.response.CheckoutRequestID,
+      payheroData.response && payheroData.response.MpesaReceiptNumber,
       payheroData.checkout_request_id,
       payheroData.CheckoutRequestID,
       payheroData.external_reference,
