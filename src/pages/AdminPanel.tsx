@@ -163,7 +163,6 @@ export default function AdminPanel() {
             <ProgressBar raised={c.raised} target={c.target} />
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>{c.donors} donors</span><span>·</span>
-              <span>{c.daysLeft} days left</span><span>·</span>
               <span>KES {c.raised.toLocaleString()} / {c.target.toLocaleString()}</span>
             </div>
           </div>
@@ -293,10 +292,7 @@ export default function AdminPanel() {
                     <p className="text-xs text-muted-foreground">Donors</p>
                     <p className="font-bold text-foreground">{previewCampaign.donors}</p>
                   </div>
-                  <div className="bg-muted/50 rounded-xl p-3">
-                    <p className="text-xs text-muted-foreground">Days Left</p>
-                    <p className="font-bold text-foreground">{previewCampaign.daysLeft}</p>
-                  </div>
+                  {/* Days Left intentionally hidden in preview */}
                 </div>
                 <div className="bg-muted/50 rounded-xl p-3">
                   <p className="text-xs text-muted-foreground">WhatsApp</p>

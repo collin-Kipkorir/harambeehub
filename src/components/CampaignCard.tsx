@@ -51,10 +51,6 @@ export default function CampaignCard({ campaign, index = 0 }: CampaignCardProps)
             <Users className="w-3.5 h-3.5" />
             {campaign.donors} donors
           </span>
-          <span className="flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" />
-            {campaign.daysLeft} days left
-          </span>
         </div>
 
         <motion.div whileTap={{ scale: 0.98 }}>

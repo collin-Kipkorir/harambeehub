@@ -69,10 +69,6 @@ export default function CampaignPage() {
               <Users className="w-4 h-4" />
               {campaign.donors} donors
             </span>
-            <span className="flex items-center gap-1.5">
-              <Clock className="w-4 h-4" />
-              {campaign.daysLeft} days left
-            </span>
           </div>
         </motion.div>
 
