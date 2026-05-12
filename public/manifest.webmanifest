@@ -8,13 +8,13 @@
   "description": "HarambeeHub helps Kenyans discover and support community campaigns across Kenya.",
   "icons": [
     {
-      "src": "/harambee_logo.png",
+      "src": "/icons/icon-192.png",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any maskable"
     },
     {
-      "src": "/harambee_logo.png",
+      "src": "/icons/icon-512.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"
